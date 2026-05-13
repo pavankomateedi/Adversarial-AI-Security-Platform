@@ -26,7 +26,9 @@ env/
 .env.*.local
 *.pem
 *.key
-.secrets.baseline
+# NOTE: .secrets.baseline IS committed — it's the detect-secrets allowlist
+# of *known/audited* findings, not real secrets. CI compares against it.
+# Refresh with:  uv run detect-secrets scan > .secrets.baseline
 
 # Editor
 .vscode/

@@ -11,7 +11,7 @@ humans share. Both reflect the same underlying numbers.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -112,7 +112,7 @@ async def build_summary(session: AsyncSession) -> dict[str, Any]:
     )
 
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "findings": {
             "by_severity": sev_counts,
             "by_status": status_counts,

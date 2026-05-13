@@ -23,7 +23,7 @@ from agentforge.agents.models import AgentRole
 from agentforge.core.target_client import ClinicalCopilotClient
 from agentforge.db.database import session_scope
 from agentforge.db.repositories.regression import RegressionRepository
-from agentforge.models.attack import AttackResult, AttackTurn, TargetResponse
+from agentforge.models.attack import AttackResult, AttackTurn
 from agentforge.models.verdict import VerdictOutcome
 
 logger = logging.getLogger(__name__)
@@ -136,4 +136,4 @@ class RegressionAgent(BaseAgent):
         if outcome in (VerdictOutcome.FAILURE, VerdictOutcome.PARTIAL):
             return "PASS", target_resp.response_text, f"verdict={outcome.value} confidence={verdict.confidence}"
         # UNCERTAIN → escalate; report as PASS conservatively (don't claim regression on uncertainty).
-        return "PASS", target_resp.response_text, f"verdict=UNCERTAIN — escalated"
+        return "PASS", target_resp.response_text, "verdict=UNCERTAIN — escalated"

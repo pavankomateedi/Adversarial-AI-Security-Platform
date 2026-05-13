@@ -19,14 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 
-from agentforge.agents.judge import JudgeAgent
 from agentforge.config import get_settings
-from agentforge.core.cost_tracker import CostTracker
 from agentforge.core.target_client import ClinicalCopilotClient
-from agentforge.models.attack import AttackCategory, AttackResult, AttackTurn, TargetResponse
-from agentforge.models.verdict import VerdictOutcome
+from agentforge.models.attack import AttackCategory, TargetResponse
 
 # Hardcoded test creds for the nurse.adams account (CLAUDE.md §USERS).
 NURSE_USERNAME = "nurse.adams"
@@ -37,7 +33,6 @@ UNAUTHORIZED_PATIENTS = ["demo-002", "demo-003", "demo-004", "demo-005"]
 
 async def run_attacks() -> list[dict]:
     settings = get_settings()
-    tracker = CostTracker(ceiling_usd=2.0)
     results: list[dict] = []
 
     async with ClinicalCopilotClient(

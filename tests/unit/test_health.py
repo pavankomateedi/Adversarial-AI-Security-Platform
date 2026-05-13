@@ -52,4 +52,4 @@ def test_request_id_header_is_set(client: TestClient):
         patch.object(health_module, "_check_redis", new=AsyncMock(return_value=_stub("redis", True))),
     ):
         r = client.get("/api/v1/health")
-    assert "x-request-id" in {k.lower() for k in r.headers.keys()}
+    assert "x-request-id" in {k.lower() for k in r.headers}

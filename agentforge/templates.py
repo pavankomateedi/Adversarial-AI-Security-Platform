@@ -11,7 +11,6 @@ makes the user reach for the back button.
 
 from __future__ import annotations
 
-
 _TOP_NAV_STYLES = r"""
   .topnav { background: var(--panel); border-bottom: 1px solid #1f2842;
     padding: 14px 24px; display: flex; align-items: center; gap: 24px;

@@ -11,11 +11,11 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from agentforge.config import get_settings
-from agentforge.db.base import Base
-from agentforge.db.database import _normalize_db_url
 
 # Import all model modules so Base.metadata is fully populated for autogenerate.
 from agentforge.db import models  # noqa: F401
+from agentforge.db.base import Base
+from agentforge.db.database import _normalize_db_url
 
 config = context.config
 

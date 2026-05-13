@@ -12,7 +12,7 @@ swap algorithms on later (argon2) without touching call sites.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -74,7 +74,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     s = settings or get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + (expires_delta or timedelta(minutes=s.jwt_expiry_minutes))
     payload: dict[str, Any] = {
         "sub": subject,

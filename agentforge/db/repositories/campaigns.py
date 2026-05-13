@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -59,7 +59,7 @@ class CampaignRepository:
             return None
         row.status = status.value
         if status in (CampaignStatus.COMPLETED, CampaignStatus.FAILED, CampaignStatus.CANCELLED):
-            row.completed_at = datetime.now(timezone.utc)
+            row.completed_at = datetime.now(UTC)
         if total_cost_usd is not None:
             row.total_cost_usd = total_cost_usd
         if findings_count is not None:

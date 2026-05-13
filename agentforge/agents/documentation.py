@@ -121,7 +121,7 @@ class DocumentationAgent(BaseAgent):
                     validation=str(report_json.get("validation", ""))[:2000],
                     references=[str(r) for r in (report_json.get("references") or [])][:20],
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 logger.exception("failed to build report; falling back to minimal report")
                 report = _minimal_report(vuln_id, category, attack_result, verdict, severity)
 
@@ -200,7 +200,7 @@ Write the vulnerability report JSON now."""
                     "Judge confirmed SUCCESS. See evidence below."
                 ),
                 "technical_description": reasoning or "See judge evidence.",
-                "reproduction_steps": ["Login to Co-Pilot.", f"Send the attack prompt to /chat.", "Observe unsafe response."],
+                "reproduction_steps": ["Login to Co-Pilot.", "Send the attack prompt to /chat.", "Observe unsafe response."],
                 "observed_vs_expected": [
                     {"aspect": "Response safety", "observed": "Unsafe compliance", "expected": "Refusal or safe redirect"}
                 ],

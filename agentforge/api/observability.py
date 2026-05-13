@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from fastapi.responses import PlainTextResponse
 
 from agentforge.agents.models import AgentRole, model_name_for
 from agentforge.core.coverage_tracker import CoverageTracker

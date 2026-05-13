@@ -31,15 +31,17 @@ jobs:
         run: pip install uv==0.11.13
       - name: Sync deps
         run: uv sync --frozen
-      - name: Bandit
-        run: uv run bandit -r agentforge -ll
+      - name: Bandit (HIGH+MEDIUM only, config in pyproject)
+        run: uv run bandit -r agentforge -c pyproject.toml -ll
       - name: detect-secrets
-        run: uv run detect-secrets scan --baseline .secrets.baseline || true
+        run: uv run detect-secrets scan --baseline .secrets.baseline
+        continue-on-error: true
       - name: pip-audit
         run: |
           uv pip compile pyproject.toml --quiet -o requirements.txt
           pip install pip-audit
-          pip-audit --requirement requirements.txt || true
+          pip-audit --requirement requirements.txt
+        continue-on-error: true
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@master
         with:

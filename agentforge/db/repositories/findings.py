@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -77,9 +77,9 @@ class FindingRepository:
             return None
         row.status = status.value
         if status == FindingStatus.RESOLVED:
-            row.resolved_at = datetime.now(timezone.utc)
+            row.resolved_at = datetime.now(UTC)
         if approved_by:
             row.approved_by = approved_by
-            row.approved_at = datetime.now(timezone.utc)
+            row.approved_at = datetime.now(UTC)
         await self.session.flush()
         return row

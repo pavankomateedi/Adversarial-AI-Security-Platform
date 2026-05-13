@@ -31,7 +31,6 @@ from agentforge.agents.base import BaseAgent
 from agentforge.agents.models import AgentRole, get_fallback_model
 from agentforge.models.verdict import JudgeVerdict, VerdictOutcome
 from agentforge.observability.metrics import attacks_total, judge_confidence
-from agentforge.observability.tracing import trace_agent_call
 
 logger = logging.getLogger(__name__)
 

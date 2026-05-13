@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
@@ -55,6 +55,6 @@ async def issue_token(
     token = create_access_token(subject, role, settings=settings)
     return TokenOut(
         access_token=token,
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiry_minutes),
+        expires_at=datetime.now(UTC) + timedelta(minutes=settings.jwt_expiry_minutes),
         role=role.value,
     )

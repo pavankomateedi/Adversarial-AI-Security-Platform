@@ -13,7 +13,6 @@ from agentforge.agents.red_team import RedTeamAgent
 from agentforge.core.cost_tracker import CostTracker
 from agentforge.core.target_client import ClinicalCopilotClient
 from agentforge.graph.edges import (
-    route_after_documentation,
     route_after_judge,
     route_after_orchestrator,
     route_after_red_team,

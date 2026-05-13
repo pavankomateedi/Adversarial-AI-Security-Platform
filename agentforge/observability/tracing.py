@@ -10,7 +10,6 @@ Safe to import even if LANGFUSE keys aren't configured — the helpers no-op.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any
 

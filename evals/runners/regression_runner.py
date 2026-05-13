@@ -17,7 +17,7 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agentforge.agents.regression import RegressionAgent
@@ -78,7 +78,7 @@ def main() -> int:
     if args.output:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"completed_at": datetime.now(timezone.utc).isoformat(), **result}
+        payload = {"completed_at": datetime.now(UTC).isoformat(), **result}
         out_path.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
         print(f"wrote {out_path}")
 

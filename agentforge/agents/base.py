@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage
 
 from agentforge.agents.models import AgentRole, get_model, model_name_for
 from agentforge.config import Settings, get_settings
-from agentforge.core.cost_tracker import CostTracker, estimate_cost_usd
+from agentforge.core.cost_tracker import CostTracker
 from agentforge.observability.metrics import llm_calls_total
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class BaseAgent(ABC):
     def _trace(self, event: str, **fields: Any) -> dict[str, Any]:
         """Build a trace entry that nodes can append to state.agent_trace."""
         return {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "agent": self.name,
             "event": event,
             **fields,

@@ -15,10 +15,9 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -111,7 +110,7 @@ async def run_full(
     max_attacks: int,
     max_mutations: int,
 ) -> dict[str, Any]:
-    overall_started = datetime.now(timezone.utc).isoformat()
+    overall_started = datetime.now(UTC).isoformat()
     results: list[dict[str, Any]] = []
     for cat in categories:
         try:

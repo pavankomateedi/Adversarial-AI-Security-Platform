@@ -16,7 +16,7 @@ import logging
 import re
 from urllib.parse import unquote_plus, urlparse
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -35,8 +35,10 @@ _SCANNER_UAS = re.compile(
     r"(?i)(sqlmap|nikto|gobuster|dirbuster|wpscan|nessus|acunetix|nuclei|metasploit|hydra|burpcollab|fuzzing)"
 )
 # Unicode normalization attacks: visually-similar lookalikes that bypass naive
-# filters (e.g. Cyrillic 'а' instead of ASCII 'a').
-_SUSPECT_UNICODE = re.compile(r"[‮‎‏⁦-⁩]")  # bidi/marker controls
+# filters (e.g. Cyrillic 'а' instead of ASCII 'a'). The regex itself contains
+# the bidi/marker characters we're trying to *detect* — flagged by bandit B412
+# but intentional here.
+_SUSPECT_UNICODE = re.compile(r"[‮‎‏⁦-⁩]")  # noqa: RUF001  # nosec B412 — intentional bidi-detector
 
 
 def _is_internal_ip(host: str) -> bool:

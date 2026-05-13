@@ -30,7 +30,7 @@ async def main() -> None:
     patient_id = pids[0]
     print(f"Target:      {settings.backend_url}")
     print(f"Patient_id:  {patient_id}")
-    print(f"Category:    prompt_injection")
+    print("Category:    prompt_injection")
     print()
 
     config = CampaignConfig(

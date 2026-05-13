@@ -19,7 +19,6 @@ from agentforge.models.attack import (
 from agentforge.models.campaign import (
     CampaignConfig,
     CampaignPriority,
-    CampaignStatus,
 )
 from agentforge.models.finding import FindingStatus, VulnerabilityFinding
 from agentforge.models.report import ObservedVsExpected, VulnerabilityReport

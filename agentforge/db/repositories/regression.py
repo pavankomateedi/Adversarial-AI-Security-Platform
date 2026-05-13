@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -63,7 +63,7 @@ class RegressionRepository:
         row = await self.session.get(RegressionRun, run_id)
         if row is None:
             return None
-        row.completed_at = datetime.now(timezone.utc)
+        row.completed_at = datetime.now(UTC)
         row.total_cases = total
         row.pass_count = passed
         row.fail_count = failed
