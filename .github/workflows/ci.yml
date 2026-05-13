@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: pip install uv==0.11.13
+      - name: Sync deps
+        run: uv sync --frozen
+      - name: Ruff
+        run: uv run ruff check agentforge evals tests scripts
+      - name: Mypy (non-strict for MVP)
+        run: uv run mypy agentforge --ignore-missing-imports --no-strict-optional || true
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: pip install uv==0.11.13
+      - name: Sync deps
+        run: uv sync --frozen
+      - name: Bandit
+        run: uv run bandit -r agentforge -ll
+      - name: detect-secrets
+        run: uv run detect-secrets scan --baseline .secrets.baseline || true
+      - name: pip-audit
+        run: |
+          uv pip compile pyproject.toml --quiet -o requirements.txt
+          pip install pip-audit
+          pip-audit --requirement requirements.txt || true
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+        continue-on-error: true
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: agentforge
+          POSTGRES_PASSWORD: agentforge
+          POSTGRES_DB: agentforge
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U agentforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@localhost:5432/agentforge
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-only-secret-key-do-not-use-in-production-1234567890abcd
+      ANTHROPIC_API_KEY: ""
+      GROQ_API_KEY: ""
+      BACKEND_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: pip install uv==0.11.13
+      - name: Sync deps
+        run: uv sync --frozen
+      - name: Run migrations
+        run: uv run alembic upgrade head
+      - name: Run unit tests
+        run: uv run pytest tests/unit/ -v --tb=short
+
+  eval_smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: pip install uv==0.11.13
+      - name: Sync deps
+        run: uv sync --frozen
+      - name: Eval harness smoke
+        run: uv run python -m evals.runners.eval_runner --smoke
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test, eval_smoke]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t agentforge:${{ github.sha }} .
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: agentforge:${{ github.sha }}
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+        continue-on-error: true

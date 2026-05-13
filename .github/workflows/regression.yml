@@ -1,0 +1,57 @@
+name: Nightly regression
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      BACKEND_USERNAME: ${{ secrets.BACKEND_USERNAME }}
+      BACKEND_PASSWORD: ${{ secrets.BACKEND_PASSWORD }}
+      BACKEND_TEST_PATIENT_IDS: ${{ secrets.BACKEND_TEST_PATIENT_IDS }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      DATABASE_URL: postgresql+asyncpg://agentforge:agentforge@localhost:5432/agentforge
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: regression-ci-secret-not-for-prod-32chars-ok
+      ENVIRONMENT: production
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: agentforge
+          POSTGRES_PASSWORD: agentforge
+          POSTGRES_DB: agentforge
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U agentforge"
+          --health-interval 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: --health-cmd "redis-cli ping"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: pip install uv==0.11.13
+      - run: uv sync --frozen
+      - name: Run migrations
+        run: uv run alembic upgrade head
+      - name: Run regression suite
+        run: |
+          uv run python -m evals.runners.regression_runner \
+            --target "$BACKEND_URL" \
+            --trigger scheduled \
+            --output evals/results/regression-${{ github.run_id }}.json \
+            --fail-on-regression
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results-${{ github.run_id }}
+          path: evals/results/

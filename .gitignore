@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+.secrets.baseline
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AgentForge runtime artifacts
+evals/results/
+vulnerability_reports/*.md
+!vulnerability_reports/README.md
+agentforge/db/migrations/versions/__pycache__/
+
+# Logs
+*.log
+logs/
