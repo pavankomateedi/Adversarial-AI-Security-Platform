@@ -103,3 +103,36 @@ class RegressionRepository:
             .limit(limit)
         )
         return (await self.session.execute(stmt)).scalars().all()
+
+    async def results_for_run(self, run_id: UUID) -> Sequence[RegressionResult]:
+        """All result rows for one run."""
+        stmt = select(RegressionResult).where(RegressionResult.run_id == run_id)
+        return (await self.session.execute(stmt)).scalars().all()
+
+    async def previous_completed_run(self, before_run_id: UUID) -> RegressionRun | None:
+        """The most recent *completed* run that is not `before_run_id`.
+
+        Used by the cross-category regression flagger to compare this run's
+        outcomes against the last known-good baseline.
+        """
+        stmt = (
+            select(RegressionRun)
+            .where(
+                RegressionRun.id != before_run_id,
+                RegressionRun.completed_at.isnot(None),
+            )
+            .order_by(RegressionRun.started_at.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def case_categories(self, case_ids: Sequence[UUID]) -> dict[UUID, str]:
+        """Map regression_case id -> category (from evaluation_rubric)."""
+        if not case_ids:
+            return {}
+        stmt = select(RegressionCase).where(RegressionCase.id.in_(case_ids))
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return {
+            r.id: str((r.evaluation_rubric or {}).get("category") or "unknown")
+            for r in rows
+        }

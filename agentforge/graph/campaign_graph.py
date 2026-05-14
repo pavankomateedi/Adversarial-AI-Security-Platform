@@ -18,6 +18,7 @@ from agentforge.graph.edges import (
     route_after_red_team,
 )
 from agentforge.graph.state import AgentForgeState
+from agentforge.observability.metrics import session_cost_usd as _session_cost_metric
 
 
 def build_campaign_graph(
@@ -52,6 +53,14 @@ def build_campaign_graph(
     async def cost_check_node(state: AgentForgeState) -> dict[str, Any]:
         snap = tracker.snapshot()
         new_total = float(snap["total_usd"])
+        # Observe the running session cost into the Prometheus histogram so
+        # /metrics shows the cost distribution per campaign — previously this
+        # histogram was defined but never observed.
+        campaign_id = str(state.get("campaign_id", "unknown"))
+        try:
+            _session_cost_metric.labels(campaign_id=campaign_id).observe(new_total)
+        except Exception:  # noqa: BLE001 — never let a metric break the graph
+            pass
         return {
             "session_cost_usd": new_total,
             "stop_campaign": tracker.ceiling_breached() or state.get("stop_campaign", False),

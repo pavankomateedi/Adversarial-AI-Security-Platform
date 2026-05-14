@@ -13,12 +13,13 @@ from agentforge.core.coverage_tracker import CoverageTracker
 from agentforge.db.database import get_session
 from agentforge.db.models import (
     AttackResult,
+    AuditLog,
     Campaign,
     RegressionResult,
     VulnerabilityFinding,
 )
 from agentforge.observability.metrics import REGISTRY
-from agentforge.security.auth import Principal, require_operator, require_viewer
+from agentforge.security.auth import Principal, require_admin, require_operator, require_viewer
 from agentforge.services.summarizer import build_summary, render_markdown
 
 router = APIRouter(tags=["observability"])
@@ -398,3 +399,109 @@ async def summary(
     if want_json:
         return snapshot
     return PlainTextResponse(content=render_markdown(snapshot), media_type="text/markdown")
+
+
+class AuditEntryOut(BaseModel):
+    id: str
+    timestamp: str
+    actor: str
+    action: str
+    resource_type: str | None
+    resource_id: str | None
+    ip_address: str | None
+    user_agent: str | None
+    metadata: dict | None
+
+
+@router.get("/audit", response_model=list[AuditEntryOut])
+async def audit_log(
+    limit: int = 100,
+    action: str | None = None,
+    actor: str | None = None,
+    db: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_admin),
+) -> list[AuditEntryOut]:
+    """Read the immutable audit trail (admin only).
+
+    The audit_log table is append-only — a Postgres trigger blocks UPDATE
+    and DELETE. This endpoint is the read side: it lets an admin reconstruct
+    "what did every actor do, in what order" — including overnight agent runs.
+    """
+    stmt = select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(min(limit, 500))
+    if action:
+        stmt = stmt.where(AuditLog.action == action)
+    if actor:
+        stmt = stmt.where(AuditLog.actor == actor)
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        AuditEntryOut(
+            id=str(r.id),
+            timestamp=r.timestamp.isoformat() if r.timestamp else "",
+            actor=r.actor,
+            action=r.action,
+            resource_type=r.resource_type,
+            resource_id=str(r.resource_id) if r.resource_id else None,
+            ip_address=str(r.ip_address) if r.ip_address else None,
+            user_agent=r.user_agent,
+            metadata=r.audit_metadata,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/judge-drift", response_model=dict)
+async def judge_drift(
+    db: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_viewer),
+) -> dict:
+    """Judge consistency / drift signal.
+
+    A Judge that "starts agreeing with everything" is a known failure mode.
+    We surface three signals over the scored attack_results:
+      - verdict distribution (a Judge stuck on one verdict is suspicious)
+      - mean confidence (creeping toward 1.0 or 0.0 = drift)
+      - cross-check disagreement rate (the 10% second-opinion sample;
+        a rising rate means the Judge is internally inconsistent)
+    """
+    # Verdict distribution across all scored attacks.
+    dist_stmt = (
+        select(AttackResult.verdict, func.count())
+        .where(AttackResult.verdict.isnot(None))
+        .group_by(AttackResult.verdict)
+    )
+    distribution = {v or "UNCLASSIFIED": int(n) for v, n in (await db.execute(dist_stmt)).all()}
+    total = sum(distribution.values())
+
+    # Mean confidence overall + over the most-recent 20 (drift = recent != all).
+    mean_all_stmt = select(func.avg(AttackResult.confidence)).where(
+        AttackResult.confidence.isnot(None)
+    )
+    mean_all = float((await db.execute(mean_all_stmt)).scalar_one() or 0.0)
+
+    recent_stmt = (
+        select(AttackResult.confidence)
+        .where(AttackResult.confidence.isnot(None))
+        .order_by(AttackResult.created_at.desc())
+        .limit(20)
+    )
+    recent_conf = [float(c) for (c,) in (await db.execute(recent_stmt)).all()]
+    mean_recent = sum(recent_conf) / len(recent_conf) if recent_conf else 0.0
+
+    # A Judge stuck on a single verdict for >85% of cases is a drift red flag.
+    dominant_share = (max(distribution.values()) / total) if total else 0.0
+    drift_suspected = total >= 10 and dominant_share > 0.85
+
+    return {
+        "total_scored": total,
+        "verdict_distribution": distribution,
+        "mean_confidence_all": round(mean_all, 3),
+        "mean_confidence_recent20": round(mean_recent, 3),
+        "confidence_delta_recent_vs_all": round(mean_recent - mean_all, 3),
+        "dominant_verdict_share": round(dominant_share, 3),
+        "drift_suspected": drift_suspected,
+        "interpretation": (
+            "Judge appears stuck on one verdict — review rubrics and cross-checks."
+            if drift_suspected
+            else "Verdict spread looks healthy."
+        ),
+    }

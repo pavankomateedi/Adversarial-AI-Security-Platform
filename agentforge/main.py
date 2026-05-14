@@ -473,9 +473,9 @@ _DASHBOARD_HTML = r"""<!doctype html>
 
   <div class="panels-row">
     <div class="panel">
-      <h2>Recent findings</h2>
+      <h2>Recent findings <span style="text-transform:none;letter-spacing:0;color:var(--dim);font-weight:400;">— CRITICAL findings need admin approval</span></h2>
       <table id="findings-table">
-        <thead><tr><th>VULN</th><th>Severity</th><th>Title</th><th>Status</th></tr></thead>
+        <thead><tr><th>VULN</th><th>Severity</th><th>Title</th><th>Status</th><th>Action</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -501,6 +501,20 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <table id="campaigns-table">
         <thead><tr><th>Started</th><th>Category</th><th>Status</th><th>Cost</th></tr></thead>
         <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panels-row">
+    <div class="panel">
+      <h2>Judge drift monitor</h2>
+      <div id="drift-panel"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Audit log <span style="text-transform:none;letter-spacing:0;color:var(--dim);font-weight:400;">— immutable, append-only</span></h2>
+      <table id="audit-table">
+        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th></tr></thead>
+        <tbody><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -639,13 +653,43 @@ function recentAttacksForAgent(d, agent) {
 
 function renderFindingsTable(d) {
   const tbody = $('#findings-table tbody');
-  if (!d.recent_findings.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No findings.</td></tr>'; return; }
-  tbody.innerHTML = d.recent_findings.map(r => `<tr>
-    <td><code>${escapeHtml(r.vuln_id)}</code></td>
-    <td><span class="severity severity-${r.severity}">${r.severity}</span></td>
-    <td>${escapeHtml(r.title)}</td>
-    <td>${escapeHtml(r.status)}</td>
-  </tr>`).join('');
+  if (!d.recent_findings.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No findings.</td></tr>'; return; }
+  tbody.innerHTML = d.recent_findings.map(r => {
+    const canApprove = r.status === 'PENDING_APPROVAL';
+    const action = canApprove
+      ? `<button class="approve-btn" data-id="${r.id}" data-vuln="${escapeHtml(r.vuln_id)}"
+           style="background:rgba(43,209,126,0.15);color:var(--ok);border:1px solid var(--ok);
+                  padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">
+           Approve</button>`
+      : '<span style="color:var(--dim);font-size:11px;">—</span>';
+    return `<tr>
+      <td><code>${escapeHtml(r.vuln_id)}</code></td>
+      <td><span class="severity severity-${r.severity}">${r.severity}</span></td>
+      <td>${escapeHtml(r.title)}</td>
+      <td>${escapeHtml(r.status)}</td>
+      <td>${action}</td>
+    </tr>`;
+  }).join('');
+  // Wire approval buttons.
+  document.querySelectorAll('.approve-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id, vuln = btn.dataset.vuln;
+      btn.disabled = true; btn.textContent = 'Approving…';
+      try {
+        const token = await getToken();
+        const r = await fetch(`/api/v1/findings/${id}/approve`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'X-Admin-Confirm': 'true' },
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        btn.textContent = 'Approved ✓';
+        setTimeout(tick, 800);  // refresh dashboard to show new OPEN status
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Approve';
+        alert(`Approve ${vuln} failed: ${e.message}\n(Need admin role + X-Admin-Confirm.)`);
+      }
+    });
+  });
 }
 
 function renderAttacksTable(d) {
@@ -678,6 +722,51 @@ function renderCampaigns(d) {
     <td>${escapeHtml(r.status)}</td>
     <td>${r.total_cost_usd != null ? '$' + r.total_cost_usd.toFixed(4) : '-'}</td>
   </tr>`).join('');
+}
+
+async function renderAuditAndDrift() {
+  const token = await getToken();
+  // Audit log (admin-only — will 403 for non-admin tokens, handled gracefully).
+  try {
+    const r = await fetch('/api/v1/audit?limit=12', { headers: { 'Authorization': 'Bearer ' + token } });
+    const tbody = $('#audit-table tbody');
+    if (r.status === 403) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Admin role required to view the audit trail.</td></tr>';
+    } else if (r.ok) {
+      const rows = await r.json();
+      tbody.innerHTML = rows.length
+        ? rows.map(a => `<tr>
+            <td>${a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '-'}</td>
+            <td><code>${escapeHtml(a.actor)}</code></td>
+            <td>${escapeHtml(a.action)}</td>
+            <td>${escapeHtml(a.resource_type ?? '-')}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="4" class="empty">No audit entries yet.</td></tr>';
+    }
+  } catch (e) { /* leave loading state */ }
+
+  // Judge drift monitor.
+  try {
+    const r = await fetch('/api/v1/judge-drift', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (r.ok) {
+      const dft = await r.json();
+      const flag = dft.drift_suspected
+        ? '<span class="severity severity-HIGH">DRIFT SUSPECTED</span>'
+        : '<span class="severity severity-LOW">HEALTHY</span>';
+      const dist = Object.entries(dft.verdict_distribution || {})
+        .map(([k, v]) => `<code>${k}</code> ${v}`).join(' &nbsp; ') || '<span class="empty">no verdicts yet</span>';
+      $('#drift-panel').innerHTML = `
+        <div style="margin-bottom:10px;">${flag}</div>
+        <div class="kv">
+          <div class="k">total scored</div><div class="v">${dft.total_scored}</div>
+          <div class="k">verdict mix</div><div class="v">${dist}</div>
+          <div class="k">mean conf (all)</div><div class="v">${dft.mean_confidence_all}</div>
+          <div class="k">mean conf (recent 20)</div><div class="v">${dft.mean_confidence_recent20}</div>
+          <div class="k">dominant share</div><div class="v">${(dft.dominant_verdict_share * 100).toFixed(0)}%</div>
+        </div>
+        <div style="margin-top:10px;color:var(--muted);font-size:12px;font-style:italic;">${escapeHtml(dft.interpretation)}</div>`;
+    }
+  } catch (e) { /* leave loading state */ }
 }
 
 async function fetchSummary() {
@@ -732,9 +821,11 @@ async function tick() {
 
 tick();
 refreshSummary();
+renderAuditAndDrift();
 setInterval(tick, 5000);
-// Summary is heavier — refresh every 30s rather than every poll.
+// Summary + audit/drift are heavier — refresh every 30s rather than every poll.
 setInterval(refreshSummary, 30000);
+setInterval(renderAuditAndDrift, 30000);
 </script>
 </body>
 </html>
