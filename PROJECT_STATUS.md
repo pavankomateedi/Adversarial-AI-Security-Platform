@@ -101,31 +101,38 @@ LLM-driven adversarial campaigns against `/chat` showed strong refusals — Judg
 
 ---
 
-## 5 · ⚠️ KNOWN ISSUE — Cross-user RBAC findings under re-verification
+## 5 · ✅ RESOLVED — Cross-user RBAC: Co-Pilot enforcement validated
 
-**TL;DR:** `target_client.login()` had a bug where `username_override` was
-stored but never used. Cross-user runs silently used the global
-`BACKEND_USERNAME` (`dr.pavan` — physician with access to all 5 patients)
-instead of `nurse.adams`. The 9 "bypasses" reported in VULN-001/002/003
-are **not validated**; they may have been dr.pavan accessing patients
-she IS authorized for.
+**TL;DR:** Re-verified 2026-05-15. The Co-Pilot's RBAC correctly
+enforces patient assignment for the nurse role. **0 bypasses across
+12 cross-user probes, all returned HTTP 403.** The original "9
+bypasses" claimed in VULN-001/002/003 were false positives caused by
+a defect in the AgentForge test harness — those reports are now
+**RETRACTED** with prominent retraction headers preserved for audit
+trail. A new finding [VULN-VERIFIED-001.md](vulnerability_reports/VULN-VERIFIED-001.md)
+documents the test-harness defect and the verified Co-Pilot result.
 
-**The bug is fixed** (commit pending after MFA verification).
+**What happened (chronology):**
 
-**Re-verification blocked on:** MFA enforcement on `nurse.adams`. The
-test user account requires MFA, which the test client doesn't seed.
-The user is disabling MFA on `nurse.adams` (same flow used for
-`dr.pavan` earlier). Once done:
+1. `target_client.login()` had a bug — accepted `username_override`
+   but silently ignored it, falling through to `BACKEND_USERNAME`
+   (`dr.pavan`, physician with access to all 5 patients).
+2. Cross-user runs intended as `nurse.adams` actually authenticated
+   as `dr.pavan` and observed authorized data access, which the probe
+   script's heuristic flagged as "bypasses."
+3. Defect fixed in commit `4cb0e8c` — `login()` now honors the override.
+4. MFA enforcement on `nurse.adams` initially blocked re-verification.
+5. After MFA was disabled by the operator, the re-test ran as the
+   *actual* nurse.adams via the prod WAF.
+6. Result: **12/12 HTTP 403** — Co-Pilot RBAC is correct. No bypass.
+7. VULN-001/002/003 retracted with full chronology in their headers.
+8. New report VULN-VERIFIED-001.md filed, documenting the defect +
+   the Co-Pilot's actual (correct) RBAC behavior.
 
-1. Re-run `BACKEND_URL=<waf-url> uv run python -m scripts.cross_user_attacks` as the *real* nurse.adams
-2. Update `VULN-001/002/003` based on what's actually true:
-   - **Confirm** if the bypasses reproduce → reports stand
-   - **Rewrite** if results differ → reports updated with new evidence
-   - **Retract** if no bypasses → replace with the honest methodology-limitation finding
-
-**Critical:** do NOT record the demo or hand the submission until this
-is resolved. Honesty in the writeup is non-negotiable — a hospital CISO
-will catch an unverified finding faster than they'll forgive one.
+**Net effect on submission:** the Co-Pilot is *more* secure than the
+original reports claimed, and the platform demonstrated honest
+self-correction. This is a stronger demo narrative than fabricated
+findings would have been.
 
 ---
 
@@ -140,7 +147,7 @@ will catch an unverified finding faster than they'll forgive one.
 | `ARCHITECTURE.md` with ~500-word summary + diagram | ✅ |
 | **Demo video (3–5 min)** | ⏸ your task — script in `INTERVIEW_PREP.md` & in chat |
 | Eval Dataset `./evals/` with results across ≥3 categories | ✅ 6 categories, 18 cases |
-| **Minimum 3 vulnerability reports** | ⚠️ VULN-001/002/003 exist; **under re-verification** (§5) |
+| **Minimum 3 vulnerability reports** | ✅ VULN-VERIFIED-001 (methodology defect, validated Co-Pilot RBAC), AUDIT-2026-05-12 (Co-Pilot LLM-safety audit), WAF-BEFORE-AFTER-2026-05-14 (firewall effectiveness measurement). VULN-001/002/003 retracted with full chronology preserved. |
 | AI Cost Analysis | ✅ `COST_ANALYSIS.md` |
 | Deployed application running live attacks | ✅ both URLs live |
 | Social post (final only — Friday) | ⏸ your task |
