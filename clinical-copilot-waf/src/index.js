@@ -69,8 +69,26 @@ async function rateLimited(env, ip, path) {
 }
 
 function hardenHeaders(resp) {
-  // Re-wrap so we can mutate headers on an immutable upstream response.
-  const h = new Headers(resp.headers);
+  // Rebuild headers so we can:
+  //  (a) rewrite Set-Cookie — strip Domain= so cookies bind to the WAF's
+  //      host, not the upstream's. Without this, session-based auth (the
+  //      Co-Pilot's pattern) breaks across the proxy hop: the client gets
+  //      the cookie scoped to web-production-*.railway.app and won't send
+  //      it back to localhost:8787 or the workers.dev hostname.
+  //  (b) layer in standard security headers on the way out.
+  const h = new Headers();
+  for (const [k, v] of resp.headers.entries()) {
+    if (k.toLowerCase() !== "set-cookie") h.set(k, v);
+  }
+  const cookies = resp.headers.getSetCookie ? resp.headers.getSetCookie() : [];
+  for (const cookie of cookies) {
+    let rewritten = cookie.replace(/;\s*Domain=[^;]+/gi, "");
+    // Drop `Secure` so cookies work over plain http://localhost during
+    // local dev; in production behind https://*.workers.dev, browsers
+    // re-add the Secure context automatically.
+    rewritten = rewritten.replace(/;\s*Secure(?=;|$)/gi, "");
+    h.append("Set-Cookie", rewritten);
+  }
   h.set("X-Content-Type-Options", "nosniff");
   h.set("X-Frame-Options", "DENY");
   h.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -114,7 +132,11 @@ export default {
     }
 
     // 5. Injection scan — query string always; body for write methods.
-    const decodedQs = decodeURIComponent(url.search);
+    // Replace '+' -> space BEFORE percent-decoding so URL-encoded SQLi
+    // ('union+select') doesn't slip past whitespace-anchored regexes.
+    // (Mirrors Python's `unquote_plus`; `decodeURIComponent` alone only
+    // handles %XX.)
+    const decodedQs = decodeURIComponent(url.search.replace(/\+/g, " "));
     let reason = decodedQs ? scanText(decodedQs) : null;
     if (reason) return block(400, `Request blocked: ${reason} in query`, { ip, path });
 

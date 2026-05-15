@@ -42,10 +42,24 @@ Thumbs.db
 
 # AgentForge runtime artifacts
 evals/results/
+# vulnerability_reports/ holds two kinds of files:
+#  (a) submission deliverables — VULN-*, AUDIT-*, WAF-*, SELFTEST-* — these
+#      MUST be committed; they're the PRD's "minimum three vulnerability
+#      reports" plus the pen-test artifacts.
+#  (b) ad-hoc agent runtime output — *.md from a DocumentationAgent run
+#      that wasn't promoted to a deliverable. We ignore the catch-all and
+#      explicitly allow the named deliverable prefixes.
 vulnerability_reports/*.md
 !vulnerability_reports/README.md
+!vulnerability_reports/VULN-*.md
+!vulnerability_reports/AUDIT-*.md
+!vulnerability_reports/WAF-*.md
+!vulnerability_reports/SELFTEST-*.md
 agentforge/db/migrations/versions/__pycache__/
 
 # Logs
 *.log
 logs/
+
+# Cloudflare Wrangler local dev cache
+clinical-copilot-waf/.wrangler/
