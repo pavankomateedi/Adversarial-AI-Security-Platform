@@ -45,6 +45,10 @@ class AgentForgeState(TypedDict, total=False):
     escalate_to_human: bool
     needs_mutation: bool
 
+    # ----- orchestrator output -----
+    next_priority: dict[str, Any] | None  # {attack_id, score, severity, exploitability}
+    low_signal: bool  # True when recent verdicts are all FAILURE (well-defended category)
+
     # ----- observability -----
     messages: Annotated[list, add_messages]
     agent_trace: list[dict[str, Any]]
@@ -80,6 +84,8 @@ def make_initial_state(
         stop_campaign=False,
         escalate_to_human=False,
         needs_mutation=False,
+        next_priority=None,
+        low_signal=False,
         messages=[],
         agent_trace=[],
     )

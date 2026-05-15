@@ -1,0 +1,27 @@
+# Cloudflare Worker config for the Clinical Co-Pilot WAF.
+# Deploy with:  npx wrangler deploy   (from this directory)
+
+name = "clinical-copilot-waf"
+main = "src/index.js"
+compatibility_date = "2026-05-01"
+
+# After deploy the WAF is reachable at:
+#   https://clinical-copilot-waf.<your-cloudflare-subdomain>.workers.dev
+workers_dev = true
+
+[vars]
+# The real Co-Pilot the WAF proxies to. Override per-environment if needed.
+TARGET_URL = "https://web-production-6259a.up.railway.app"
+# Comma-separated ISO country codes to hard-block. Empty = allow all.
+BLOCKED_COUNTRIES = ""
+# Inbound body-size ceiling in bytes (50 KB default).
+MAX_BODY_BYTES = "51200"
+
+# Workers KV namespace backing the per-IP sliding-window rate limiter.
+# Create it once with:
+#   npx wrangler kv namespace create RATE_LIMIT_KV
+# then paste the returned id below. The Worker gracefully skips rate
+# limiting if this binding is absent, so it deploys fine without KV first.
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "PASTE_KV_NAMESPACE_ID_HERE"

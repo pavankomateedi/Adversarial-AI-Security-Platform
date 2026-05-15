@@ -93,17 +93,31 @@ class ClinicalCopilotClient:
     # ----- auth ------------------------------------------------------------------
 
     async def login(self) -> None:
-        """Authenticate using BACKEND_USERNAME / BACKEND_PASSWORD."""
-        username = self._settings.backend_username
-        password = self._settings.backend_password
-        if not username or not password:
+        """Authenticate.
+
+        Prefers the per-client overrides (username_override / password_override)
+        when set — this is what lets cross_user_attacks.py log in as a
+        DIFFERENT user (nurse.adams) than the global BACKEND_USERNAME in .env
+        (dr.pavan). Without honoring the overrides, every "cross-user"
+        probe would silently run as the default admin user, invalidating
+        the whole RBAC test class.
+        """
+        username = self._username_override or self._settings.backend_username
+        if self._password_override is not None:
+            password_plain: str | None = self._password_override
+        elif self._settings.backend_password is not None:
+            password_plain = self._settings.backend_password.get_secret_value()
+        else:
+            password_plain = None
+        if not username or not password_plain:
             raise TargetAuthError(
-                "BACKEND_USERNAME / BACKEND_PASSWORD not configured — cannot authenticate."
+                "Username / password not configured — pass overrides or set "
+                "BACKEND_USERNAME / BACKEND_PASSWORD."
             )
 
         resp = await self._client.post(
             "/auth/login",
-            json={"username": username, "password": password.get_secret_value()},
+            json={"username": username, "password": password_plain},
         )
         if resp.status_code != 200:
             raise TargetAuthError(
@@ -116,6 +130,7 @@ class ClinicalCopilotClient:
                 "or seed an MFA secret (not supported yet)."
             )
         self._authenticated = True
+        self._authenticated_as = username  # for diagnostics
         logger.info("target_client logged in as %s", username)
 
     async def _ensure_authenticated(self) -> None:

@@ -84,8 +84,12 @@ class RedTeamAgent(BaseAgent):
             )
             mutation_gen = state.get("mutation_count", 0) + 1
         else:
-            # Fresh attack — pick a not-yet-seen case from the category.
-            attack_case = self._pick_next_case(category=category, seen=seen)
+            # Fresh attack — honor the Orchestrator's priority pick if it set
+            # one, otherwise fall back to library order.
+            next_priority = state.get("next_priority") or {}
+            attack_case = self._pick_next_case(
+                category=category, seen=seen, preferred_id=next_priority.get("attack_id")
+            )
             if attack_case is None:
                 # Out of seed cases — let Orchestrator pick a new category or stop.
                 return {"current_attack": None, "stop_campaign": False, "agent_trace": state.get("agent_trace", []) + [self._trace("library_exhausted", category=category)]}
@@ -131,8 +135,21 @@ class RedTeamAgent(BaseAgent):
 
     # ---- helpers ----------------------------------------------------------------
 
-    def _pick_next_case(self, *, category: str, seen: list[str]) -> AttackCase | None:
+    def _pick_next_case(
+        self, *, category: str, seen: list[str], preferred_id: str | None = None
+    ) -> AttackCase | None:
+        """Pick the next unseen seed case.
+
+        If the Orchestrator nominated a specific `preferred_id` (its
+        highest-priority candidate by severity x exploitability / cost) and
+        it hasn't been run yet, use that. Otherwise fall back to library
+        order so the campaign still progresses if priority data is missing.
+        """
         candidates = self.library.by_category(category)
+        if preferred_id:
+            for case in candidates:
+                if case.attack_id == preferred_id and case.attack_id not in seen:
+                    return case
         for case in candidates:
             if case.attack_id not in seen:
                 return case

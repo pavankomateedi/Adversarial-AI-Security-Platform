@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from agentforge.agents.base import BaseAgent
 from agentforge.agents.judge import JudgeAgent
@@ -81,6 +82,12 @@ class RegressionAgent(BaseAgent):
                 run.id, total=len(cases), passed=pass_count, failed=fail_count, regressed=regression_count
             )
 
+            # Cross-category regression flag: did fixing one category
+            # introduce a failure in a category that was clean last run?
+            cross_category_flags = await self._detect_cross_category_regressions(
+                repo, run.id, results_summary
+            )
+
         return {
             "regression_run_id": str(run.id),
             "regression_results": results_summary,
@@ -89,14 +96,83 @@ class RegressionAgent(BaseAgent):
                 "pass": pass_count,
                 "fail": fail_count,
                 "regression": regression_count,
+                "cross_category_regressions": cross_category_flags,
             },
             "agent_trace": state.get("agent_trace", []) + [self._trace(
                 "regression_complete",
                 run_id=str(run.id),
                 total=len(cases),
                 regression=regression_count,
+                cross_category_regressions=len(cross_category_flags),
             )],
         }
+
+    async def _detect_cross_category_regressions(
+        self,
+        repo: RegressionRepository,
+        run_id: Any,
+        current_summary: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Flag categories that were all-PASS last run but failed this run.
+
+        The PRD asks us to "flag when fixing one attack introduces a
+        regression in another category". We can't see the Co-Pilot's diff,
+        but we can see the *symptom*: a category that was green last run and
+        is red this run, when nothing in that category's own cases changed.
+        That's the signature of a fix in category A breaking category B.
+        """
+        prev_run = await repo.previous_completed_run(run_id)
+        if prev_run is None:
+            return []  # first run — no baseline to compare against
+
+        prev_results = await repo.results_for_run(prev_run.id)
+        # case_id -> category, covering both runs' cases
+        all_case_ids = {r.case_id for r in prev_results if r.case_id}
+        all_case_ids |= {
+            UUID(r["case_id"]) for r in current_summary if r.get("case_id")
+        }
+        case_cat = await repo.case_categories(list(all_case_ids))
+
+        def _category_status(results: list[tuple[Any, str]]) -> dict[str, set[str]]:
+            """category -> set of outcomes seen."""
+            out: dict[str, set[str]] = {}
+            for case_id, outcome in results:
+                cat = case_cat.get(case_id, "unknown")
+                out.setdefault(cat, set()).add(outcome)
+            return out
+
+        prev_by_cat = _category_status(
+            [(r.case_id, r.outcome) for r in prev_results if r.case_id]
+        )
+        curr_by_cat = _category_status(
+            [
+                (UUID(r["case_id"]), r["outcome"])
+                for r in current_summary
+                if r.get("case_id")
+            ]
+        )
+
+        flags: list[dict[str, Any]] = []
+        for cat, curr_outcomes in curr_by_cat.items():
+            prev_outcomes = prev_by_cat.get(cat)
+            if prev_outcomes is None:
+                continue  # category is new — not a regression
+            was_clean = prev_outcomes <= {"PASS"}
+            now_broken = bool(curr_outcomes & {"FAIL", "REGRESSION"})
+            if was_clean and now_broken:
+                flags.append({
+                    "category": cat,
+                    "previous": sorted(prev_outcomes),
+                    "current": sorted(curr_outcomes),
+                    "note": (
+                        f"Category '{cat}' was clean in run {prev_run.id} but "
+                        f"shows {sorted(curr_outcomes & {'FAIL', 'REGRESSION'})} "
+                        "this run — possible side-effect of a fix elsewhere."
+                    ),
+                })
+        if flags:
+            logger.warning("cross-category regressions detected: %s", [f["category"] for f in flags])
+        return flags
 
     async def _replay_one(
         self,

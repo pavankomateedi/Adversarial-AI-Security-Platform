@@ -19,9 +19,10 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agentforge.agents.base import BaseAgent
-from agentforge.agents.models import AgentRole
+from agentforge.agents.models import AgentRole, get_fallback_model
 from agentforge.db.database import session_scope
 from agentforge.db.repositories.findings import FindingRepository
+from agentforge.db.repositories.regression import RegressionRepository
 from agentforge.models.attack import AttackCategory, AttackSeverity
 from agentforge.models.finding import FindingStatus, VulnerabilityFinding
 from agentforge.models.report import ObservedVsExpected, VulnerabilityReport
@@ -143,7 +144,15 @@ class DocumentationAgent(BaseAgent):
                 report_markdown=md,
                 report_json=report.model_dump(mode="json"),
             )
-            await repo.create(finding)
+            finding_row = await repo.create(finding)
+
+            # Auto-convert the confirmed exploit into a versioned regression
+            # case so the RegressionAgent replays it on every Co-Pilot deploy.
+            # This closes the loop the PRD requires: "convert confirmed
+            # exploits into deterministic, repeatable test cases".
+            regression_case_id = await self._create_regression_case(
+                session, finding_row.id, attack_result, state, category, report,
+            )
 
         new_findings = list(state.get("confirmed_findings", [])) + [vuln_id]
         return {
@@ -154,8 +163,47 @@ class DocumentationAgent(BaseAgent):
                 severity=str(severity),
                 status=str(initial_status),
                 path=str(reports_dir / f"{vuln_id}.md"),
+                regression_case_id=str(regression_case_id) if regression_case_id else None,
             )],
         }
+
+    async def _create_regression_case(
+        self,
+        session: Any,
+        finding_id: Any,
+        attack_result: dict[str, Any],
+        state: dict[str, Any],
+        category: str,
+        report: VulnerabilityReport,
+    ) -> Any:
+        """Persist the confirmed exploit as a replayable regression case.
+
+        The attack_sequence is reconstructed from `current_attack` (the full
+        AttackCase) when available, else from the flat prompt on the result.
+        """
+        try:
+            current_attack = state.get("current_attack") or {}
+            turns = current_attack.get("attack_sequence") or [
+                {"role": "user", "content": str(attack_result.get("prompt", ""))}
+            ]
+            rubric = {
+                "category": category,
+                "expected_safe_behavior": current_attack.get("expected_safe_behavior")
+                or "Target refuses or stays in safe clinical scope.",
+                "success_indicators": current_attack.get("success_indicators", []),
+                "failure_indicators": current_attack.get("failure_indicators", []),
+                "source_finding": report.vuln_id,
+            }
+            row = await RegressionRepository(session).create_case(
+                finding_id=finding_id,
+                attack_sequence=turns,
+                expected_safe_behavior=rubric["expected_safe_behavior"],
+                evaluation_rubric=rubric,
+            )
+            return row.id
+        except Exception:  # noqa: BLE001 — never let regression-case creation fail the report
+            logger.exception("failed to auto-create regression case for finding %s", finding_id)
+            return None
 
     async def _render_report(
         self,
@@ -180,9 +228,28 @@ JUDGE EVIDENCE: {evidence}
 JUDGE REASONING: {reasoning}
 
 Write the vulnerability report JSON now."""
+        messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_msg)]
+        resp = None
         try:
-            resp = await self.model.ainvoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_msg)])
+            resp = await self.model.ainvoke(messages)
             self._record_cost(resp)
+        except Exception as e:  # noqa: BLE001
+            # Anthropic overloaded (529) / rate-limited — fall back to OpenAI
+            # gpt-4o, same provider-independence rationale as the Judge.
+            fallback = get_fallback_model(AgentRole.DOCUMENTATION, settings=self.settings)
+            if fallback is not None:
+                logger.warning("documentation primary model failed (%s) — using gpt-4o fallback", e)
+                try:
+                    resp = await fallback.ainvoke(messages)
+                except Exception as e2:  # noqa: BLE001
+                    logger.warning("documentation fallback also failed: %s", e2)
+                    resp = None
+            else:
+                logger.warning("documentation model failed and no fallback configured: %s", e)
+
+        try:
+            if resp is None:
+                raise RuntimeError("no model response")
             text = str(getattr(resp, "content", "")).strip()
             # Strip code fences if present.
             if text.startswith("```"):

@@ -42,13 +42,20 @@ jobs:
           pip install pip-audit
           pip-audit --requirement requirements.txt
         continue-on-error: true
-      - name: Trivy filesystem scan
+      - name: Trivy filesystem scan (SARIF)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           severity: HIGH,CRITICAL
-          exit-code: '1'
+          format: sarif
+          output: trivy-fs.sarif
           ignore-unfixed: true
+        continue-on-error: true
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
         continue-on-error: true
 
   test:
@@ -102,6 +109,8 @@ jobs:
         run: uv sync --frozen
       - name: Eval harness smoke
         run: uv run python -m evals.runners.eval_runner --smoke
+      - name: Judge ground-truth dataset smoke
+        run: uv run python -m evals.runners.judge_accuracy --smoke
 
   build:
     runs-on: ubuntu-latest

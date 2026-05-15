@@ -16,6 +16,7 @@ from uuid import UUID
 
 from agentforge.config import get_settings
 from agentforge.core.cost_tracker import CostTracker
+from agentforge.core.coverage_tracker import CoverageTracker
 from agentforge.core.target_client import ClinicalCopilotClient
 from agentforge.db.database import session_scope
 from agentforge.db.repositories.attacks import AttackResultRepository
@@ -24,8 +25,23 @@ from agentforge.graph.campaign_graph import build_campaign_graph
 from agentforge.graph.state import make_initial_state
 from agentforge.models.attack import AttackResult as AttackResultModel
 from agentforge.models.campaign import CampaignConfig, CampaignStatus
+from agentforge.observability.metrics import coverage_percent as _coverage_metric
 
 logger = logging.getLogger(__name__)
+
+# Bound concurrent campaign execution to MAX_CONCURRENT_CAMPAIGNS. Without
+# this, a burst of POST /campaigns spawns unbounded asyncio tasks that all
+# hammer the Co-Pilot + LLM providers at once — exactly the cost-amplification
+# pattern the platform exists to catch. Lazily created so the value is read
+# from settings at first use, not import time.
+_campaign_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _campaign_semaphore
+    if _campaign_semaphore is None:
+        _campaign_semaphore = asyncio.Semaphore(get_settings().max_concurrent_campaigns)
+    return _campaign_semaphore
 
 
 async def start_campaign(config: CampaignConfig, *, patient_id: str | None = None) -> UUID:
@@ -43,6 +59,18 @@ async def _run_campaign_task(campaign_id: UUID, config: CampaignConfig, patient_
     settings = get_settings()
     pid = patient_id or (settings.test_patient_ids_list[0] if settings.test_patient_ids_list else None)
 
+    # Wait for a concurrency slot. Campaigns queue here rather than all
+    # running at once; the row sits in PENDING until a slot frees up.
+    async with _get_semaphore():
+        await _execute_campaign(campaign_id, config, pid, settings)
+
+
+async def _execute_campaign(
+    campaign_id: UUID,
+    config: CampaignConfig,
+    pid: str | None,
+    settings: Any,
+) -> None:
     async with session_scope() as session:
         await CampaignRepository(session).update_status(campaign_id, CampaignStatus.RUNNING)
 
@@ -101,6 +129,16 @@ async def _run_campaign_task(campaign_id: UUID, config: CampaignConfig, patient_
             total_cost_usd=total,
             findings_count=len(final_state.get("confirmed_findings", [])),
         )
+
+        # Refresh the coverage_percent gauge for every category now that this
+        # campaign added attack_results. Previously the gauge was defined but
+        # never written — /metrics showed nothing for it.
+        try:
+            coverage = await CoverageTracker(session).by_category()
+            for cat, cov in coverage.items():
+                _coverage_metric.labels(category=cat).set(cov.coverage_pct)
+        except Exception:  # noqa: BLE001 — metric refresh must never fail the campaign
+            logger.warning("coverage gauge refresh failed", exc_info=True)
 
     await target_client.aclose()
     logger.info(
