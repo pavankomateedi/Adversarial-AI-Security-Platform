@@ -24,7 +24,7 @@ class CampaignRepository:
     async def create(self, config: CampaignConfig) -> Campaign:
         row = Campaign(
             status=CampaignStatus.PENDING.value,
-            attack_category=str(config.attack_category),
+            attack_category=config.attack_category.value if hasattr(config.attack_category, "value") else str(config.attack_category),
             config=config.model_dump(mode="json"),
         )
         self.session.add(row)

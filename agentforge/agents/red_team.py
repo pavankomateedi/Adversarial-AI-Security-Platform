@@ -101,7 +101,7 @@ class RedTeamAgent(BaseAgent):
         result = AttackResult(
             campaign_id=_uuid_or_none(campaign_id),
             attack_case_id=attack_case.attack_id,
-            category=AttackCategory(str(attack_case.category)),
+            category=attack_case.category if isinstance(attack_case.category, AttackCategory) else AttackCategory(attack_case.category),
             subcategory=attack_case.subcategory,
             prompt=prompt_text,
             response=target_response.response_text,

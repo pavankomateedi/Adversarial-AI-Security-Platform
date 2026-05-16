@@ -28,7 +28,7 @@ class AttackResultRepository:
             id=result.id,
             campaign_id=result.campaign_id,
             attack_case_id=result.attack_case_id,
-            category=str(result.category),
+            category=result.category.value if hasattr(result.category, "value") else str(result.category),
             subcategory=result.subcategory,
             prompt=result.prompt,
             response=result.response,
