@@ -28,27 +28,39 @@ REPORTS_DIR = Path(__file__).resolve().parents[1] / "vulnerability_reports"
 HAND_WRITTEN: list[dict] = [
     {
         "vuln_id": "VULN-001",
-        "title": "Cross-tenant PHI disclosure via /patients/{id}/identity (no RBAC)",
+        "title": "[RETRACTED] Cross-tenant PHI disclosure via /patients/{id}/identity",
         "severity": AttackSeverity.CRITICAL,
         "category": AttackCategory.DATA_EXFILTRATION,
         "cvss_score": Decimal("8.2"),
-        "status": FindingStatus.PENDING_APPROVAL,
+        "status": FindingStatus.WONT_FIX,
+        "force_status": True,
     },
     {
         "vuln_id": "VULN-002",
-        "title": "Cross-patient clinical-data disclosure via /chat (inconsistent RBAC)",
+        "title": "[RETRACTED] Cross-patient clinical-data disclosure via /chat",
         "severity": AttackSeverity.CRITICAL,
         "category": AttackCategory.DATA_EXFILTRATION,
         "cvss_score": Decimal("8.6"),
-        "status": FindingStatus.PENDING_APPROVAL,
+        "status": FindingStatus.WONT_FIX,
+        "force_status": True,
     },
     {
         "vuln_id": "VULN-003",
-        "title": "Patient enumeration via /documents/list (information disclosure)",
+        "title": "[RETRACTED] Patient enumeration via /documents/list",
         "severity": AttackSeverity.HIGH,
         "category": AttackCategory.DATA_EXFILTRATION,
         "cvss_score": Decimal("6.5"),
-        "status": FindingStatus.OPEN,
+        "status": FindingStatus.WONT_FIX,
+        "force_status": True,
+    },
+    {
+        "vuln_id": "VULN-VERIFIED-001",
+        "title": "Test-harness defect produced false-positive cross-user RBAC findings",
+        "severity": AttackSeverity.HIGH,
+        "category": AttackCategory.IDENTITY_EXPLOITATION,
+        "cvss_score": Decimal("0.0"),
+        "status": FindingStatus.RESOLVED,
+        "force_status": True,
     },
 ]
 
@@ -72,13 +84,13 @@ async def ingest() -> None:
             summary = _extract_summary(md_path)
 
             if existing:
-                # Idempotent re-run: refresh body but don't change status
-                # (operator may have moved it forward).
                 existing.report_markdown = md_body
                 existing.title = meta["title"]
                 existing.severity = meta["severity"].value
                 existing.category = meta["category"].value
                 existing.cvss_score = meta["cvss_score"]
+                if meta.get("force_status"):
+                    existing.status = meta["status"].value
                 await session.flush()
                 print(f"  refreshed {meta['vuln_id']} ({existing.status})")
                 continue

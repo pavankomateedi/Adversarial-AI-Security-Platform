@@ -82,7 +82,7 @@ async def _execute_campaign(
         graph = build_campaign_graph(target_client=target_client, cost_tracker=cost_tracker)
         initial = make_initial_state(
             campaign_id=str(campaign_id),
-            attack_category=str(config.attack_category),
+            attack_category=config.attack_category.value if hasattr(config.attack_category, "value") else str(config.attack_category),
             target_url=settings.backend_url,
             config=config.model_dump(mode="json"),
             patient_id=pid,
